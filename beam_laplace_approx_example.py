@@ -1,6 +1,6 @@
 
 import pickle
-from oed_posterior_kl_metric import global_lin_find_optimal_d
+from oed_global_linear import normal_find_optimal_d
 
 import jax
 import jax.numpy as jnp
