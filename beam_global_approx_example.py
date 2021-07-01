@@ -1,12 +1,9 @@
 
-import pickle
-from oed_posterior_kl_metric import global_lin_find_optimal_d
-
+from oed_optimise import global_lin_find_optimal_d
 import jax
 import jax.numpy as jnp
+from jax.scipy.linalg import cholesky
 import numpy as np
-
-from jax.scipy.linalg import cholesky, cho_solve, solve_triangular
 
 def kernel(x_1, x_2, params):
     return params["const"]*jnp.exp(-0.5*((x_1 - x_2)/params["length"])**2)
