@@ -132,6 +132,8 @@ def create_compute_log_prob_grads():
         log_like_grad = model_del_d_val @ jlinalg.solve(noise_cov, y-model_val)
         # Compute gradient of log_post:
 
+
+
 def create_log_probs_and_grads():
     # Create functions required to create the log_probs_and_grad function:
     compute_map = create_compute_map(model, model_grad_theta, noise_cov, prior_mean, prior_cov, theta_bounds)
@@ -140,9 +142,9 @@ def create_log_probs_and_grads():
     compute_log_post = create_compute_log_post(noise_cov, prior_cov, prior_mean)
     def log_probs_and_grads(d, prior_samples, like_samples):
         # Compute posterior MAP for these samples:
-        map_vals, map_grads  = compute_map(d, prior_samples, like_samples)
+        theta_map = compute_map(d, prior_samples, like_samples)
         # Compute linerisations of model about these MAP points:
-        G, b = linearise_model(map_vals, d)
+        G, b = linearise_model(theta_map, d)
         # Compute log posterior using linearisations:
         log_post = compute_log_post(prior_samples, like_samples, G, b)
         # Compute gradients of MAP points wrt d:
