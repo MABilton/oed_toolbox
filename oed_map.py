@@ -6,6 +6,14 @@ from scipy.optimize import minimize
 # Set seed for reproducability:
 np.random.seed(42)
 
+# Functions to be specified by user stored in "model_funcs" dictionary:
+#   - g(theta, d) = Forward model which returns (N_samples, N_theta) array
+#   - g_del_theta(theta, d) = grad of g wrt theta, returning (N_samples, N_y, N_theta) array
+#   - g_del_d(theta,d) = grad of g wrt d, returning (N_samples, N_y, N_d) array
+#   - g_del_2_theta(theta,d) = 2nd order grad of g wrt d, returning (N_samples, N_y, N_theta, N_theta) array
+#   - g_del_d_theta(theta,d) = mixed grad of g wrt d and theta, returning (N_samples, N_y, N_theta, N_d) array
+# Note: theta.shape = (N_samples, N_theta), d.shape = (N_d,)
+
 def create_compute_map(model_funcs, inv_noise, prior_mean, inv_prior, theta_bounds):
     # Unpack functions:
     g = model_funcs["g"]

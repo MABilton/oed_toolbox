@@ -1,124 +1,131 @@
-import jax
-import jax.numpy as jnp
-import jax.scipy.linalg.det as jlinalg
+from math import inf, pi
 import numpy as np
 from numpy.random import multivariate_normal as mvn
-from scipy.optimize import minimize
-from math import inf, pi
+from numpy import linalg
+from oed_map import create_compute_map
 
-# This will create FUNCTIONS which can then be passed to oed_optimise
+# Functions to be specified by user stored in "model_funcs" dictionary:
+#   - g(theta, d) = Forward model which returns (N_samples, N_theta) array
+#   - g_del_theta(theta, d) = grad of g wrt theta, returning (N_samples, N_theta, N_theta) array
+#   - g_del_d(theta,d) = grad of g wrt d, returning (N_samples, N_theta, N_d) array
+#   - g_del_2_theta(theta,d) = 2nd order grad of g wrt d, returning (N_samples, N_theta, N_theta, N_theta) array
+#   - g_del_d_theta(theta,d) = mixed grad of g wrt d and theta, returning (N_samples, N_theta, N_theta, N_d) array
 
-def find_optimal_d(likelihood_fun, likelihood_grad_fun, noise_cov, prior_mean, prior_cov, d_bounds, num_samples=100, num_repeats=9):
-    best_ape = inf
-    # Compute required functions TODO:
-    funcs = create_functions(likelihood_fun, likelihood_grad_fun)
-    # Sample from prior:
-    theta_samples = mvn(prior_mean, prior_cov, num_samples)
-    for i in range(num_repeats):
-        d_0 = np.random.uniform(d_bounds[0][0], d_bounds[0][1], size=1)
-        d, ape = minimise_ape(d_0, theta_samples, noise_cov)
-        if ape < best_ape:
-            best_ape, best_d = ape, d
-    return best_d
+def create_local_linear_funcs(model_funcs, noise_cov, prior_mean, prior_cov, theta_bounds):
+    # Create prior function to sample from:
+    sample_prior = create_sample_prior(prior_mean, prior_cov)
+    # Create likelihood function to sample from:
+    sample_likelihood = create_sample_likelihood(model_funcs["g"], noise_cov)
+    # Compute inverse of noise and prior matrices:
+    inv_noise, inv_prior = linalg.inv(noise_cov, prior_cov)
+    # Create function to compute log_post and gradients of log_post and log_like:
+    log_probs_and_grads = create_log_probs_and_grads(model_funcs, inv_noise, prior_mean, prior_cov, inv_prior, theta_bounds)
+    return (sample_prior, sample_likelihood, log_probs_and_grads)
 
-def minimise_ape(d_0, theta_samples, noise_cov, funcs):
-    best_ape = inf
-    # Initialise d:
-    d = d_0
-    for i in range(max_steps):
-        # Draw samples from likelihood for current d:
-        y_samples = sample_likelihood(d, theta_samples, noise_cov, model_fun)
+#
+#   CREATE SAMPLING FUNCTIONS
+#
 
-        # Compute posterior MAP for all samples drawn:
-        theta_map, map_jac = find_map(d, theta_samples, y_samples, map_loss, map_loss_grad)
+def create_sample_prior(prior_mean, prior_cov):
+    def sample_prior(num_samples):
+        return mvn(prior_mean, prior_cov, size=num_samples)
+    return sample_prior
 
-        # Compute APE and grad of APE:
-        ln_post, grad = compute_logpost_and_grad_vmap(theta, y, d, theta_map, map_jac)
-        ape, ape_grad = jnp.mean(ln_post, axis=0), jnp.mean(grad, axis=0)
+# See https://juanitorduz.github.io/multivariate_normal/ for theory:
+def create_sample_likelihood(model, noise_cov):
+    # Compute Cholesky decomposition of noise cov matrix:
+    cov_chol = linalg.cholesky(noise_cov)
+    # Sample from zero mean, unit variance Gaussian, then transform for each sample:
+    def sample_likelihood(d, theta_samples):
+        # Compute means -> means.shape = (n_samples, y_dim):
+        means = model(d, theta_samples)
+        # Compute number of zero mean, unit variance Gaussian samples to draw -> samples.shape = (n_samples, y_dim):
+        y_dim, n_samples = means.shape[1], means.shape[0]
+        samples = mvn(np.zeros(y_dim), np.eye(y_dim), size=n_samples)
+        # Transform samples:
+        samples = (cov_chol @ samples.T).T + means
+        return samples
+    return sample_likelihood
 
-        # Perform stochastic step forward:
-        d = update_d(d, ape_grad)
-        
-        # Store if best d found thus far:
-        if ape < best_ape:
-            best_ape, best_d = ape, d
-    return (best_d, best_ape)
+#
+#   CREATE LOG PROB FUNCTIONS
+#
 
-def sample_likelihood(d, theta_samples, noise_cov, model_fun):
-    like_means = model_fun(theta_samples, d)
-    like_samples = []
-    for i in range(theta_samples.size[0]):
-        like_samples.append(mvn(like_means[i,:], noise_cov, 1))
-    like_samples = jnp.vstack(like_samples)
-    return like_samples
+def create_log_post_and_grad(inv_noise, prior_mean, prior_cov, inv_prior):
 
-def find_map(d, y_samples, theta_samples, map_loss_fun, map_loss_grad_fun, num_repeats=9):
-    sample_map, sample_jac = [], []
-    # Compute map for each y sample:
-    for i in range(y_samples.shape[0]):
-        y_i, theta_i = y_samples[i,:], theta_samples[i,:]
-        map_i, jac_i = find_map_one_sample(d, y_i, theta_i, map_loss_fun, map_loss_grad_fun, num_repeats)
-        sample_map.append(map_i)
-        sample_jac.append(jac_i)
-    sample_map, sample_jac = jnp.vstack(sample_map), jnp.vstack(sample_jac)
-    return (sample_map, sample_jac)
+    # Computes mean, covariance matrix and inverse covariance matrix of posterior:
+    def compute_mean_and_cov(y, b, G1):
+        # Compute inverse cov and cov matrices:
+        inv_cov = np.einsum("aki,kl,alj->aij", G1, inv_noise, G1) + inv_prior
+        cov = linalg.inv(inv_cov)
+        # Compute mean:
+        mean = np.einsum("aj,ik,akj->ai", (y-b), inv_noise, G1) + prior_mean.T @ inv_prior
+        mean = np.einsum("ak,aki->ai", mean, cov)
+        return (mean, cov, inv_cov)
 
-def find_map_one_sample(d, y, theta_guess, map_loss, map_loss_grad, num_repeats, theta_bounds=None):
-    # Assume call syntax of (theta, y, d) for map_loss and map_loss_grad
-    best_loss = inf
-    # Create required functions:
-    for i in range(num_repeats):
-        rand_num = mvn(jnp.ones(theta_guess.size), jnp.identity(theta_guess.size))
-        theta_0 = rand_num*theta_guess
-        opt_result = minimize(map_loss, theta_0, jac=map_loss_grad, args=(y,d), method="L-BFGS-B", bounds=theta_bounds)
-        if opt_result['fun'] < best_loss:
-            best_loss = opt_result['fun']
-            best_map = opt_result['x']
-            best_jac = opt_result['jac']
-    return (best_map, best_jac)
+    # Computes gradient of posterior mean, poterior covariance matrix, and inverse of poterior covariance matrix:
+    def compute_mean_and_cov_grad(y, b, theta_map, map_grad, cov, inv_cov, G1, G2, G12):
+        # Grad of inverse covariance matrix - same value?:
+        inv_cov_grad = np.einsum("alik,lm,amj->aijk", G12, inv_noise, G1) + np.einsum("ali,lm,amjk->aijk", G1, inv_noise, G12)
+        # Grad of covariance matrix:
+        cov_grad = -1*np.einsum("ail,almk,amj->aijk", cov, inv_cov_grad, cov)
+        # Grad of posterior mean:
+        b_grad = G2 - np.einsum("aikj,ak->aij", G12, theta_map) + np.einsum("aik,akj->aij", G1, map_grad)
+        mean_grad = np.einsum("akij,al,lm,amk->aij", cov_grad, y-b, inv_noise, G1) \
+            - np.einsum("aki,alj,lm,amk->aij", cov, b_grad, inv_noise, G1) \
+                 + np.einsum("l,lk,akij->aij", prior_mean, prior_cov, cov_grad)
+        return (mean_grad, cov_grad, inv_cov_grad)
 
-def compute_logpost_and_grad(theta, y, d, theta_map, map_jac, model_grad_fun, map_loss_fun_grads):
+    # Computes log probability of posterior and gradient of log posterior wrt d:
+    def log_post_and_grad(theta, y, theta_map, map_grad, G, G1, G2, G12):
+        # Compute b linearisation coefficient:
+        b = G - np.einsum("aij,aj->ai", G1, theta_map)
+        # Compute mean and covariance matrix of posterior:
+        mean, cov, inv_cov = compute_mean_and_cov(y, b, G1)
+        # Compute theta - posterior mean:
+        del_theta = theta - mean
+        # Compute log posterior probability:
+        log_post = -0.5*(theta.shape[1])*np.log(2*pi) - 0.5*np.log(linalg.det(cov)) \
+            - 0.5*np.einsum("ai,aij,aj->a", del_theta, inv_cov, del_theta)
+        # Compute gradient of posterior mean and cov wrt d:
+        mean_grad, cov_grad, inv_cov_grad = \
+             compute_mean_and_cov_grad(y, b, theta_map, map_grad, cov, inv_cov, G1, G2, G12)
+        # Compute gradient of log posterior:
+        log_post_grad =  -0.5*np.einsum("aijk,aji->ak", cov_grad, inv_cov) \
+            - 0.5*np.einsum("aijk,ai,aj->ak", inv_cov_grad, del_theta, del_theta) \
+               + 0.5*np.einsum("aik,akj,aj->ai", mean_grad, inv_cov, del_theta)
+        return (log_post, log_post_grad)
 
-    # Compute gradient of MAP point:
-    map_grad = map_grad(theta_map, y, d, map_jac, map_loss_fun_grads)
+    return log_post_and_grad
 
-    # Compute linearisation:
-    G = compute_G(theta_map, d, model_grad_fun)
-    b = compute_b(theta_map, d, model_grad_fun)
+def create_log_probs_and_grads(model_funcs, inv_noise, prior_mean, prior_cov, inv_prior, theta_bounds):
+    # Unpack functions:
+    g = model_funcs["g"]
+    g_del_theta = model_funcs["g_del_theta"]
+    g_del_d = model_funcs["g_del_d"]
+    g_del_2_theta = model_funcs["g_del_2_theta"]
+    g_del_d_theta = model_funcs["g_del_d_theta"]
+    
+    # Create helper functions:
+    compute_map = create_compute_map(model_funcs, inv_noise, prior_mean, inv_prior, theta_bounds)
+    log_post_and_grad = create_log_post_and_grad(inv_noise, prior_mean, prior_cov, inv_prior)
 
-    # Compute gradient of linearisation wrt d
-    G_grad = compute_G_grad(theta_map, d, map_grad, model_grad_fun, G_grad_args_fun)
-    b_grad = compute_b_grad(theta_map, d, map_grad, model_grad_fun, b_grad_args_fun)
+    def log_probs_and_grads(d, theta_samples, y_samples):
+        # Compute MAP:
+        map_vals, map_grads = compute_map(d, theta_samples, y_samples)
 
-    # Compute derivatives of ln post and ln like:
-    ln_post_grad = compute_log_post_grad(y, theta, G, b, inv_cov_y, inv_cov_theta, mean_theta)
-    ln_like_grad = compute_log_like_grad(y, theta, G, b, cov_y, inv_cov_y)
+        # Compute required model-based arrays:
+        G = g(map_vals, d)
+        G1 = g_del_theta(map_vals, d)
+        G2 = g_del_d(map_vals, d)
+        G11 = g_del_2_theta(map_vals, d)
+        G12 = g_del_d_theta(map_vals, d)
 
-    # Compute ln_post and ln_like prob values:
-    ln_post = compute_log_post(y, theta, G, b, inv_cov_y, inv_cov_theta, mean_theta)
+        # Compute gradient of log likelihood:
+        log_like_grad = np.eimsum("aki,kl,alj->aij", G2, inv_noise, y_samples-G)
 
-    # Compute gradient of APE:
-    grad = ln_post*ln_like_grad + ln_post_grad
-    return (ln_post, grad)
+        # Compute log posterior probability and gradient of log posterior:
+        log_post, log_post_grad = log_post_and_grad(theta_samples, y_samples, map_vals, map_grads, G, G1, G2, G12)
 
-def map_grad(theta_map, y, d, map_jac, map_loss_fun_grads):
-    return jlinalg.solve(map_loss_fun_grads[1](theta_map, y, d), map_jac-map_loss_fun_grads[0](theta_map, y, d))
-
-def compute_log_like(y, theta, G, b, cov_y, inv_cov_y):
-    k = cov_y.shape[0]
-    mean = G @ theta + b
-    return -k/2*jnp.log(2*pi) + -1/2*jnp.log(jlinalg.det(cov_y)) \
-        -1/2*(y-mean).T @ inv_cov_y @ (y-mean)
-
-def compute_log_post(y, theta, G, b, inv_cov_y, inv_cov_theta, mean_theta):
-    k = mean_theta.size
-    post_cov = G.T @ inv_cov_y @ G + inv_cov_theta
-    post_mean = post_cov @ G.T @ inv_cov_y @ (y - b) + post_cov @ inv_cov_theta @ mean_theta
-    return -k/2*jnp.log(2*pi) + -1/2*jnp.log(jlinalg.det(post_cov)) \
-        -1/2*(theta-post_mean).T @ jlinalg.solve(post_cov, (theta-post_mean))
-
-
-# FUNCTION TEMPLATES:
-        
-
-
+        return (log_post, log_like_grad, log_post_grad)
+    return log_probs_and_grads
