@@ -33,18 +33,15 @@ def create_sample_prior(prior_mean, prior_cov):
 
 # See https://juanitorduz.github.io/multivariate_normal/ for theory:
 def create_sample_likelihood(model, noise_cov):
-    # Compute Cholesky decomposition of noise cov matrix:
-    cov_chol = linalg.cholesky(noise_cov)
     # Sample from zero mean, unit variance Gaussian, then transform for each sample:
     def sample_likelihood(d, theta_samples):
         # Compute means -> means.shape = (n_samples, y_dim):
         means = model(d, theta_samples)
-        # Compute number of zero mean, unit variance Gaussian samples to draw -> samples.shape = (n_samples, y_dim):
+        # Compute number of zero mean Gaussian samples to draw -> samples.shape = (n_samples, y_dim):
         y_dim, n_samples = means.shape[1], means.shape[0]
-        samples = mvn(np.zeros(y_dim), np.eye(y_dim), size=n_samples)
+        samples = mvn(np.zeros(y_dim), noise_cov, size=n_samples)
         # Transform samples:
-        samples = (cov_chol @ samples.T).T + means
-        return samples
+        return samples + means
     return sample_likelihood
 
 #
@@ -103,7 +100,6 @@ def create_log_probs_and_grads(model_funcs, inv_noise, prior_mean, prior_cov, in
     g = model_funcs["g"]
     g_del_theta = model_funcs["g_del_theta"]
     g_del_d = model_funcs["g_del_d"]
-    g_del_2_theta = model_funcs["g_del_2_theta"]
     g_del_d_theta = model_funcs["g_del_d_theta"]
     
     # Create helper functions:
@@ -118,7 +114,6 @@ def create_log_probs_and_grads(model_funcs, inv_noise, prior_mean, prior_cov, in
         G = g(map_vals, d)
         G1 = g_del_theta(map_vals, d)
         G2 = g_del_d(map_vals, d)
-        G11 = g_del_2_theta(map_vals, d)
         G12 = g_del_d_theta(map_vals, d)
 
         # Compute gradient of log likelihood:
