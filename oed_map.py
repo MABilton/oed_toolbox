@@ -30,11 +30,10 @@ def create_compute_map(model_funcs, inv_noise, prior_mean, inv_prior, theta_boun
         # Compute loss:
         y_mean = g(theta.reshape(1,dim_theta), d)
         # Transpose so both are column vectors:
-        del_y, del_theta = (y-y_mean).squeeze(), (theta-prior_mean).squeeze()
+        del_y, del_theta = np.atleast_1d((y-y_mean).squeeze()), np.atleast_1d((theta-prior_mean).squeeze())
         loss = np.einsum("i,ij,j->", del_y, inv_noise, del_y) + np.einsum("i,ij,j->", del_theta, inv_prior, del_theta) 
-        #print(np.einsum("i,ij,j->", del_y, inv_noise, del_y))
         # Compute gradient of loss wrt theta - squeeze to remove singleton dimension:
-        y_grad = g_del_theta(theta.reshape(1,dim_theta), d).squeeze()
+        y_grad = np.atleast_2d(g_del_theta(theta.reshape(1,dim_theta), d).squeeze())
         loss_grad = -2*np.einsum("ik,ij,j->k", y_grad, inv_noise, del_y) + 2*np.einsum("ij,j->i", inv_prior, del_theta)
         return (np.asfortranarray(loss, dtype=np.float64).squeeze(), np.asfortranarray(loss_grad, dtype=np.float64))
         

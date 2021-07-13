@@ -38,10 +38,10 @@ if __name__ == "__main__":
     # Define noise model and prior:
     noise_var = np.array([0.1, 0.1, 0.1])
     prior_var = np.array([5., 5.])
+    prior_mean = np.array([1.0, -2.0])
     inv_noise_var = np.linalg.inv(np.diag(noise_var))
     inv_prior_var = np.linalg.inv(np.diag(prior_var))
-    prior_mean = np.array([0.0, 0.0])
-
+    
     # Create model coefficient functions:
     K_fun = create_K_fun()
 
