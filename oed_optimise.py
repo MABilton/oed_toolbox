@@ -48,7 +48,7 @@ def initialise_optim_params():
     optim_params = {"method": "adam", \
                     "beta_1": 0.9, \
                     "beta_2": 0.999, \
-                    "lr": 1*10**-1,
+                    "lr": 10**-1,
                     "eps": 10**-8}
     # optim_params = {"method": "adagrad", \
     #                 "lr": 10**-2, \
