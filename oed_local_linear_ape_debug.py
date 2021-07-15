@@ -64,5 +64,4 @@ if __name__ == "__main__":
     det_d = oed_det.find_optimal_d(post_det_and_grad, d_bounds)
 
     # Compare optimal d results - should be the same:
-    print(f"D-Optimal d = {det_d}.")
-    #print(f"APE Optimal d = {ape_d}, D-Optimal d = {det_d}.")
+    print(f"APE Optimal d = {ape_d}, D-Optimal d = {det_d}.")

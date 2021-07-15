@@ -2,7 +2,7 @@ from math import inf
 import numpy as np
 from scipy.optimize import minimize
 
-def find_optimal_d(post_det_and_grad, d_bounds, num_repeats=50):
+def find_optimal_d(post_det_and_grad, d_bounds, num_repeats=100):
     best_det = inf
     for i in range(num_repeats):
         d0 = np.random.rand(d_bounds.shape[0])*(d_bounds[:,1] - d_bounds[:,0]) + d_bounds[:,0]
@@ -26,6 +26,6 @@ def create_det_fun(model_funcs, inv_noise, inv_prior):
         inv_cov_grad = np.einsum("lik,lm,mj->ijk", G12, inv_noise, G1) + np.einsum("li,lm,mjk->ijk", G1, inv_noise, G12)
         cov_grad = -1*np.einsum("il,lmk,mj->ijk", cov, inv_cov_grad, cov)
         det_grad = det*np.einsum("ij,jik->k", inv_cov, cov_grad)
-        return (det, det_grad)
+        return (np.asfortranarray(det, dtype=np.float64).squeeze(), np.asfortranarray(det_grad, dtype=np.float64))
     return det_and_grad
 
