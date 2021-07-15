@@ -2,6 +2,7 @@
 import numpy as np
 
 def update_d(grad_store, optim_params, num_iter):
+    # Apply optimisation method:
     method = optim_params["method"]
     if method.lower() == "adam":
         update, optim_params = adam_update(grad_store, optim_params, num_iter)
