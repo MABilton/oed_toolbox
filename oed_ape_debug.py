@@ -10,13 +10,15 @@ from oed_det import create_det_fun, find_optimal_d as find_det_d
 def create_linear_model(K, b):
     def linear_model(theta, d):
         theta = jnp.atleast_1d(theta.squeeze())
-        y = K(d) @ theta + b(d)
-        return jnp.atleast_1d(y.squeeze())
+        return jnp.atleast_1d(jnp.einsum("ik,k->i", K(d), theta).squeeze())
     return linear_model
 
 def get_lin_coeffs():
     def K(d):
         K = jnp.array([-1.*(d-5.)**2 + 20.])
+        # K = jnp.array([[d[0]**2, d[1]**(1/2)], \
+        #         [d[1] + 1, d[2]**(3/2)], \
+        #         [d[2]**(-1), d[3]**2]])
         return K
     def b(d):
         b = jnp.array([0.])
@@ -63,16 +65,21 @@ if __name__ == "__main__":
     K, b = get_lin_coeffs()
     lin_model = create_linear_model(K, b)
 
+    # Define bounds for theta and d:
+    theta_bounds = jnp.array([[-10., 10.]])
+    d_bounds = jnp.array([[10**-1, 10.]])
+    # theta_bounds = jnp.array([[-10., 10.], [-10., 10.]])
+    # d_bounds = jnp.array([[10**-1, 10.], [10**-1, 10.], [10**-1, 10.], [10**-1, 10.]])
+
     # Define noise and prior:
     noise_cov = jnp.array([[0.1]])
     prior_cov = jnp.array([[1.]])
     prior_mean = jnp.array([0.])
+    # noise_cov = jnp.diag(jnp.array([0.1, 0.1, 0.1]))
+    # prior_cov = jnp.diag(jnp.array([1., 1.]))
+    # prior_mean = jnp.array([0., 0.])
     inv_noise = jnp.linalg.inv(noise_cov) 
     inv_prior = jnp.linalg.inv(prior_cov)
-    
-    # Define bounds for theta and d:
-    theta_bounds = jnp.array([[-10., 10.]])
-    d_bounds = jnp.array([[0., 10.]])
 
     # Compute required ape functions and gradients + vectorise if required:
     model_vmap = jax.vmap(lin_model, in_axes=(0,None))
@@ -94,3 +101,4 @@ if __name__ == "__main__":
     det_and_grad = create_det_fun(model_funcs, inv_noise, inv_prior)
     det_d = find_det_d(det_and_grad, d_bounds)
     print(f"D-optimal design = {det_d}, APE Optimal Design = {ape_d}")
+    # D-Optimal = [8.84850121 3.50704789 4.1671176  9.86470318]

@@ -1,14 +1,21 @@
 
 import numpy as np
 
-def update_d(grad_store, optim_params, num_iter):
+def update_d(grad_store, optim_params, num_iter, d, d_bounds):
     # Apply optimisation method:
     method = optim_params["method"]
     if method.lower() == "adam":
         update, optim_params = adam_update(grad_store, optim_params, num_iter)
     elif method.lower() == "adagrad":
         update, optim_params = adagrad_update(grad_store, optim_params)
-    return (update, optim_params)
+    # Update d - convert to np.array incase d is a Jax array:
+    d_update = np.array(d - update)
+    # Clip updated d so that it lies within d_bounds:
+    lb, ub = d_bounds[:,0], d_bounds[:,1]
+    d_lt_lb, d_gt_ub = np.array(d_update < lb), np.array(d_update > ub)
+    d_update[d_lt_lb] = lb[d_lt_lb]
+    d_update[d_gt_ub] = ub[d_gt_ub]
+    return (d_update, optim_params)
 
 # See: https://www4.stat.ncsu.edu/~lu/ST7901/reading%20materials/Adam_algorithm.pdf
 def adam_update(grad_store, optim_params, num_iter):
@@ -51,6 +58,6 @@ def initialise_optim_params():
                     "lr": 10**-1,
                     "eps": 10**-8}
     # optim_params = {"method": "adagrad", \
-    #                 "lr": 10**-2, \
+    #                 "lr": 10**-1, \
     #                 "eps": 10**-8}
     return optim_params
