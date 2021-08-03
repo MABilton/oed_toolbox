@@ -1,7 +1,7 @@
 import numpy as np
 import jax
 import jax.numpy as jnp
-
+from oed_sample import create_sampling_funcs
 from oed_local_linear import create_local_linear_funcs
 import oed_ape
 import oed_det
@@ -50,8 +50,8 @@ if __name__ == "__main__":
     model_funcs["g_del_d_theta"] = jax.vmap(jax.jacrev(lin_model_del_theta, argnums=1), in_axes=(0,None))
 
     # Create local_linear functions:
-    sample_prior, sample_likelihood, log_probs_and_grads = \
-        create_local_linear_funcs(model_funcs, noise_cov, prior_mean, prior_cov, theta_bounds, inv_noise=inv_noise, inv_prior=inv_prior)
+    sample_prior, sample_likelihood = create_sampling_funcs(model_funcs["g"], noise_cov, prior_mean, prior_cov)
+    log_probs_and_grads = create_local_linear_funcs(model_funcs, noise_cov, prior_mean, prior_cov, theta_bounds)
 
     # Pass local_linear functions to oed_ape to find optimal d:
     ape_d = oed_ape.find_optimal_d(sample_likelihood, sample_prior, log_probs_and_grads, d_bounds)

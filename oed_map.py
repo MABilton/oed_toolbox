@@ -14,7 +14,7 @@ np.random.seed(42)
 #   - g_del_d_theta(theta, d) = mixed grad of g wrt d and theta, returning (N_samples, N_y, N_theta, N_d) array
 # Note: theta.shape = (N_samples, N_theta), d.shape = (N_d,)
 
-def create_compute_map(model_funcs, inv_noise, prior_mean, inv_prior, theta_bounds):
+def create_compute_map(model_funcs, inv_noise, prior_mean, inv_prior, theta_bounds, dim_d):
     # Unpack functions:
     g = model_funcs["g"]
     g_del_theta = model_funcs["g_del_theta"]
@@ -27,23 +27,27 @@ def create_compute_map(model_funcs, inv_noise, prior_mean, inv_prior, theta_boun
 
     # Loss function to minimise to find MAP:
     def map_loss_and_grad(theta, y, d):
+        theta, d = theta.reshape(1,dim_theta), d.reshape(1, dim_d)
         # Compute loss:
-        y_mean = g(theta.reshape(1,dim_theta), d)
+        y_mean = g(theta, d)
         # Transpose so both are column vectors:
         del_y, del_theta = np.atleast_1d((y-y_mean).squeeze()), np.atleast_1d((theta-prior_mean).squeeze())
-        loss = np.einsum("i,ij,j->", del_y, inv_noise, del_y) + np.einsum("i,ij,j->", del_theta, inv_prior, del_theta) 
+        loss = np.einsum("i,ij,j->", del_y, inv_noise, del_y) #+ np.einsum("i,ij,j->", del_theta, inv_prior, del_theta) 
         # Compute gradient of loss wrt theta - squeeze to remove singleton dimension:
-        y_grad = np.atleast_2d(g_del_theta(theta.reshape(1,dim_theta), d).squeeze())
-        loss_grad = -2*np.einsum("ik,ij,j->k", y_grad, inv_noise, del_y) + 2*np.einsum("ij,j->i", inv_prior, del_theta)
+        y_grad = np.atleast_2d(g_del_theta(theta, d).squeeze())
+        loss_grad = -2*np.einsum("ik,ij,j->k", y_grad, inv_noise, del_y) #+ 2*np.einsum("ij,j->i", inv_prior, del_theta)
         return (np.asfortranarray(loss, dtype=np.float64).squeeze(), np.asfortranarray(loss_grad, dtype=np.float64))
         
     # Function to compute MAP and MAP Jacobian for a SINGLE sample:
-    def compute_map_single_sample(d, y, num_repeats=1):
+    def compute_map_single_sample(d, y, num_repeats=2):
         best_loss = inf
         # Compute MAP:
+        #loss_only = lambda theta, y, d :  map_loss_and_grad(theta, y, d)[0]
         for i in range(num_repeats):
             theta_0 = np.random.rand(theta_bounds.shape[0])*(theta_bounds[:,1] - theta_bounds[:,0]) + theta_bounds[:,0]
             opt_result = minimize(map_loss_and_grad, theta_0, bounds=theta_bounds, method="L-BFGS-B", jac=True, args=(y, d))
+            print(opt_result)
+            # opt_result = minimize(loss_only, theta_0, bounds=theta_bounds, method="L-BFGS-B", jac=False, args=(y, d))
             if opt_result["fun"] < best_loss:
                 best_loss, best_theta = opt_result["fun"], opt_result["x"]
         return best_theta
@@ -73,12 +77,11 @@ def create_compute_map(model_funcs, inv_noise, prior_mean, inv_prior, theta_boun
         map_val = []
         # Need to manually iterate over MAP optimisations:
         for i in range(num_samples):
-            map_i = compute_map_single_sample(d, like_samples[i,:])
+            map_i = compute_map_single_sample(d[i,:], like_samples[i,:])
             map_val.append(map_i)
         map_val = np.array(map_val).reshape(num_samples, dim_theta)
         # Compute gradients of MAP wrt d:
         L11, L13 = compute_L11_and_L13(map_val, d, like_samples)
         map_grad = -1*linalg.solve(L11, L13)
         return (map_val, map_grad)
-
     return compute_map

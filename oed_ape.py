@@ -64,15 +64,18 @@ def initialise_d(d_bounds):
     return d0
 
 def compute_ape_and_grads(d, prior_samples, sample_likelihood, log_probs_and_grads, ape_avg, grad_avg, cv_flag=True, rb_num=0):
+    # Repeat d:
+    d_repeat = np.repeat(d, prior_samples.shape[0], axis=0)
     if not rb_num:
-        ape, ape_grad = non_rb_ape(d, prior_samples, sample_likelihood, log_probs_and_grads, cv_flag, ape_avg, grad_avg)
+        ape, ape_grad = non_rb_ape(d_repeat, prior_samples, sample_likelihood, log_probs_and_grads, cv_flag, ape_avg, grad_avg)
     else: 
-        ape, ape_grad = rb_ape(d, prior_samples, sample_likelihood, log_probs_and_grads, cv_flag, rb_num, ape_avg, grad_avg)
+        ape, ape_grad = rb_ape(d_repeat, prior_samples, sample_likelihood, log_probs_and_grads, cv_flag, rb_num, ape_avg, grad_avg)
     return (ape, ape_grad)
 
 def non_rb_ape(d, prior_samples, sample_likelihood, log_probs_and_grads, cv_flag, ape_avg, grad_avg):
     # Sample likelihood:
     like_samples = sample_likelihood(d, prior_samples)
+    print(like_samples)
     # Compute log probabilities and gradients:
     log_post, log_like_grad, log_post_grad = log_probs_and_grads(d, prior_samples, like_samples)
     # Compute ape_grad term for each sample:
@@ -106,7 +109,7 @@ def rb_ape(d, prior_samples, sample_likelihood, log_probs_and_grads, cv_flag, in
 
 def apply_control_variates(log_post, grad, log_like_grad, ape_avg, grad_avg):
     # Compute control variates to decrease variance of ape and apge_grad estimates:
-    if ape_avg != 0.:
+    if False: #ape_avg != 0.:
         cv_grad = np.einsum("ai,j->aij", log_like_grad, grad_avg).reshape(grad.shape[0], grad.shape[1]**2)
         cv = np.hstack((log_like_grad, ape_avg*log_like_grad, cv_grad))
     else:

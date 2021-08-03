@@ -1,1 +1,5 @@
-__pychache__
+__pycache*
+*.png
+gp_oed_surrogate
+*.json
+.*_kernel.py
