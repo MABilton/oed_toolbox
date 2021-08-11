@@ -1,7 +1,6 @@
 from math import pi
 import numpy as np
 from numpy import linalg
-from scipy.misc import derivative
 from oed_map import create_compute_map
 
 # Functions to be specified by user stored in "model_funcs" dictionary:
@@ -16,7 +15,7 @@ from oed_map import create_compute_map
 eps = 7*np.sqrt(np.finfo(np.float64).eps)
 
 # Add error flag for d_dim=None if need to numerically differentiate:
-def create_local_linear_funcs(model_funcs, noise_cov, prior_mean, prior_cov, theta_bounds, d_dim, dx=eps, vect_flag=False):
+def create_local_linear_funcs(model_funcs, noise_cov, prior_mean, prior_cov, theta_bounds, d_dim, approx_flag=True, dx=eps, vect_flag=False):
     # Compute inverse of noise and prior matrices if required:
     inv_noise, inv_prior = linalg.inv(noise_cov), linalg.inv(prior_cov)
     # Note dimensions of problem:
@@ -29,7 +28,7 @@ def create_local_linear_funcs(model_funcs, noise_cov, prior_mean, prior_cov, the
         if grad not in model_funcs:
             model_funcs[grad] = create_numerical_grad(model_funcs["g"], grad, y_dim, theta_dim, d_dim, dx)
     # Create function to compute log_post and gradients of log_post and log_like:
-    log_probs_and_grads = create_log_probs_and_grads(model_funcs, inv_noise, prior_mean, prior_cov, inv_prior, theta_bounds, d_dim)
+    log_probs_and_grads = create_log_probs_and_grads(model_funcs, inv_noise, prior_mean, prior_cov, inv_prior, theta_bounds, d_dim, approx_flag)
     return log_probs_and_grads
 
 #
@@ -84,7 +83,7 @@ def create_log_post_and_grad(inv_noise, prior_mean, prior_cov, inv_prior):
         return (log_post, log_post_grad)
     return log_post_and_grad
 
-def create_log_probs_and_grads(model_funcs, inv_noise, prior_mean, prior_cov, inv_prior, theta_bounds, d_dim):
+def create_log_probs_and_grads(model_funcs, inv_noise, prior_mean, prior_cov, inv_prior, theta_bounds, d_dim, approx_flag):
     # Unpack functions:
     g = model_funcs["g"]
     g_del_theta = model_funcs["g_del_theta"]
@@ -96,9 +95,13 @@ def create_log_probs_and_grads(model_funcs, inv_noise, prior_mean, prior_cov, in
     log_post_and_grad = create_log_post_and_grad(inv_noise, prior_mean, prior_cov, inv_prior)
 
     def log_probs_and_grads(d, theta_samples, y_samples):
-        # Compute MAP:
-        map_vals, map_grads = compute_map(d, y_samples)
+        
+        # Initialise MAP estimates to prior sample?
+        theta_init = theta_samples if approx_flag else None
 
+        # Compute MAP:
+        map_vals, map_grads = compute_map(d, y_samples, theta_samples, theta_init)
+        
         # Compute required model-based arrays:
         G = g(map_vals, d)
         G1 = g_del_theta(map_vals, d)

@@ -7,6 +7,8 @@ from numpy.random import multivariate_normal as mvn
 from oed_ape import find_optimal_d as find_ape_d
 from oed_det import create_det_fun, find_optimal_d as find_det_d
 
+np.random.seed(32)
+
 def create_linear_model(K, b):
     def linear_model(theta, d):
         theta = jnp.atleast_1d(theta.squeeze())
@@ -15,7 +17,7 @@ def create_linear_model(K, b):
 
 def get_lin_coeffs():
     def K(d):
-        K = jnp.array([-1.*(d-5.)**2 + 20.])
+        K = jnp.array([-1.*(d-5.)**2 + 1e8])
         # K = jnp.array([[d[0]**2, d[1]**(1/2)], \
         #         [d[1] + 1, d[2]**(3/2)], \
         #         [d[2]**(-1), d[3]**2]])
@@ -66,8 +68,8 @@ if __name__ == "__main__":
     lin_model = create_linear_model(K, b)
 
     # Define bounds for theta and d:
-    theta_bounds = jnp.array([[-10., 10.]])
-    d_bounds = jnp.array([[10**-1, 10.]])
+    theta_bounds = jnp.array([[-10, 10.]])
+    d_bounds = jnp.array([[10**-1, 30.]])
     # theta_bounds = jnp.array([[-10., 10.], [-10., 10.]])
     # d_bounds = jnp.array([[10**-1, 10.], [10**-1, 10.], [10**-1, 10.], [10**-1, 10.]])
 
@@ -82,12 +84,12 @@ if __name__ == "__main__":
     inv_prior = jnp.linalg.inv(prior_cov)
 
     # Compute required ape functions and gradients + vectorise if required:
-    model_vmap = jax.vmap(lin_model, in_axes=(0,None))
+    model_vmap = jax.jit(jax.vmap(lin_model, in_axes=(0,0)))
     sample_prior, sample_likelihood, log_posterior, log_likelihood \
          = create_ape_funcs(lin_model, model_vmap, K, b, noise_cov, prior_mean, prior_cov)
-    log_post_vmap = jax.vmap(log_posterior, in_axes=(0,0,None))
-    log_like_grad = jax.vmap(jax.jacrev(log_likelihood, argnums=2), in_axes=(0,0,None))
-    log_post_grad = jax.vmap(jax.jacrev(log_posterior, argnums=2), in_axes=(0,0,None))
+    log_post_vmap = jax.jit(jax.vmap(log_posterior, in_axes=(0,0,0)))
+    log_like_grad = jax.jit(jax.vmap(jax.jacrev(log_likelihood, argnums=2), in_axes=(0,0,0)))
+    log_post_grad = jax.jit(jax.vmap(jax.jacrev(log_posterior, argnums=2), in_axes=(0,0,0)))
     # Place log probabilities and grads in single function:
     log_probs_and_grads = create_log_probs_and_grads(log_post_vmap, log_like_grad, log_post_grad)
 

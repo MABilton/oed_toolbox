@@ -5,33 +5,37 @@ from scipy.optimize import minimize
 from oed_optimise import update_d, initialise_optim_params
 
 # Set seed for reproducability:
-np.random.seed(40)
+np.random.seed(21)
 
 # Note that log_probs_and_grad must accept: (d, prior_samples, like_samples), and must return: (log_post, log_like_grad, log_post_grad)
-def find_optimal_d(sample_likelihood, sample_prior, log_probs_and_grads, d_bounds, optim_params=None, num_repeats=9):
+def find_optimal_d(sample_likelihood, sample_prior, log_probs_and_grads, d_bounds, optim_params=None, num_repeats=9, save_flag=True):
     best_ape = inf
     # Initialise optimisation options if not specified:
     if optim_params is None: optim_params = initialise_optim_params()
     for i in range(num_repeats):
         print(f"Optimisation {i+1}:")
-        d, ape = minimise_ape(log_probs_and_grads, sample_prior, sample_likelihood, d_bounds, optim_params)
+        save_name = f"opt_{i}.txt" if save_flag else None
+        d, ape = minimise_ape(log_probs_and_grads, sample_prior, sample_likelihood, d_bounds, optim_params, save_name)
         if ape < best_ape:
             best_d, best_ape = d, ape
     return best_d
 
 #num_samples= 
-def minimise_ape(log_probs_and_grads, sample_prior, sample_likelihood, d_bounds, optim_params, num_samples=10, max_iter=10**3, cv_beta=0.9):
+def minimise_ape(log_probs_and_grads, sample_prior, sample_likelihood, d_bounds, optim_params, save_name, num_samples=500, max_iter=10**5, cv_beta=0.9):
     # Initialise loop quantities:
     best_ape = inf
     loop_flag = True
     # Initialise d:
     d = initialise_d(d_bounds)
+    d = np.array([21.])
     # Initialise exponentially weighted average ape and ape_grad:
     d_avg, ape_avg, grad_avg = np.array([0.]), np.array([0.]), np.zeros(d.size)  
     # Initialise loop variable:
     num_iter = 0
     # Sample from prior:
     prior_samples = sample_prior(num_samples)
+    if save_name is not None:
+        file2write = open(save_name,'w')
     while loop_flag:
         # Compute APE and APE gradient values for all samples:
         ape, ape_grad = compute_ape_and_grads(d, prior_samples, sample_likelihood, log_probs_and_grads, ape_avg, grad_avg)
@@ -46,6 +50,8 @@ def minimise_ape(log_probs_and_grads, sample_prior, sample_likelihood, d_bounds,
         grad_avg = (cv_beta*ape_grad + (1-cv_beta)*grad_avg)/(1-cv_beta**num_iter)
         d_avg = (cv_beta*d + (1-cv_beta)*d_avg)/(1-cv_beta**num_iter)
         print(f"{ape}, {d}")
+        if save_name is not None:
+            file2write.write(f"{d.item()}, {ape}, {ape_grad}\n")
         # Take note of whether d value is best value observed thus far:
         if ape < best_ape:
             best_d, best_ape = d, ape
@@ -54,7 +60,8 @@ def minimise_ape(log_probs_and_grads, sample_prior, sample_likelihood, d_bounds,
         d_store = np.vstack((d_store, d)) if num_iter>1 else np.atleast_2d(d)
         # Check loop conditions:
         loop_flag = check_loop_conditions(d, d_avg, d_bounds, num_iter, max_iter) if num_iter > 1 else True
-    # Compute better estimate for APE at optimal point:
+    if save_name is not None:
+        file2write.close()
     return (best_d, best_ape)
 
 # Assume d_bounds.shape = (d_dim, 2) -> each row is a dimension of d, col 0 is LB, col 1 is UB
@@ -65,7 +72,8 @@ def initialise_d(d_bounds):
 
 def compute_ape_and_grads(d, prior_samples, sample_likelihood, log_probs_and_grads, ape_avg, grad_avg, cv_flag=True, rb_num=0):
     # Repeat d:
-    d_repeat = np.repeat(d, prior_samples.shape[0], axis=0)
+    d_dim, num_samples = d.size, prior_samples.shape[0]
+    d_repeat = np.repeat(d, num_samples, axis=0).reshape(num_samples,d_dim)
     if not rb_num:
         ape, ape_grad = non_rb_ape(d_repeat, prior_samples, sample_likelihood, log_probs_and_grads, cv_flag, ape_avg, grad_avg)
     else: 
@@ -75,7 +83,6 @@ def compute_ape_and_grads(d, prior_samples, sample_likelihood, log_probs_and_gra
 def non_rb_ape(d, prior_samples, sample_likelihood, log_probs_and_grads, cv_flag, ape_avg, grad_avg):
     # Sample likelihood:
     like_samples = sample_likelihood(d, prior_samples)
-    print(like_samples)
     # Compute log probabilities and gradients:
     log_post, log_like_grad, log_post_grad = log_probs_and_grads(d, prior_samples, like_samples)
     # Compute ape_grad term for each sample:
@@ -109,7 +116,7 @@ def rb_ape(d, prior_samples, sample_likelihood, log_probs_and_grads, cv_flag, in
 
 def apply_control_variates(log_post, grad, log_like_grad, ape_avg, grad_avg):
     # Compute control variates to decrease variance of ape and apge_grad estimates:
-    if False: #ape_avg != 0.:
+    if False: #  # abs(ape_avg) > 1 and abs(grad_avg) > 1
         cv_grad = np.einsum("ai,j->aij", log_like_grad, grad_avg).reshape(grad.shape[0], grad.shape[1]**2)
         cv = np.hstack((log_like_grad, ape_avg*log_like_grad, cv_grad))
     else:
@@ -126,7 +133,7 @@ def apply_control_variates(log_post, grad, log_like_grad, ape_avg, grad_avg):
     ape_grad = -1*np.mean(grad - np.einsum("ij,ai->aj", a_grad, cv), axis=0)
     return (ape, ape_grad)
 
-def check_loop_conditions(d, d_avg, d_bounds, num_iter, max_iter, d_threshold=1*10**-5):
+def check_loop_conditions(d, d_avg, d_bounds, num_iter, max_iter, d_threshold=1*10**-9):
     # Check change in APE and d vs mean:
     d_change_flag = np.all(abs(d - d_avg) < d_threshold)
     # Check if d currently at boundary:

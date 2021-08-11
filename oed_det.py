@@ -28,4 +28,3 @@ def create_det_fun(model_funcs, inv_noise, inv_prior):
         det_grad = det*np.einsum("ij,jik->k", inv_cov, cov_grad)
         return (np.asfortranarray(det, dtype=np.float64).squeeze(), np.asfortranarray(det_grad, dtype=np.float64))
     return det_and_grad
-

@@ -1,4 +1,3 @@
-
 import numpy as np
 
 def update_d(grad_store, optim_params, num_iter, d, d_bounds):
@@ -52,12 +51,12 @@ def adagrad_update(grad_store, optim_params):
     return (update, optim_params)
 
 def initialise_optim_params():
-    optim_params = {"method": "adam", \
-                    "beta_1": 0.9, \
-                    "beta_2": 0.999, \
+    optim_params = {"method": "adam", 
+                    "beta_1": 0.9,
+                    "beta_2": 0.999,
                     "lr": 10**-1,
                     "eps": 10**-8}
     # optim_params = {"method": "adagrad", \
-    #                 "lr": 10**-1, \
+    #                 "lr": 5*10**-2, \
     #                 "eps": 10**-8}
     return optim_params

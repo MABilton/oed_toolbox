@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from jax.scipy.linalg import cholesky, cho_solve, solve_triangular
+from jax.scipy.linalg import cholesky
 
 def kernel(x_1, x_2, params):
     return params["const"]*jnp.exp(-0.5*((x_1 - x_2)/params["length"])**2)
