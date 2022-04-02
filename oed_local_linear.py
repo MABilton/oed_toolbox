@@ -36,6 +36,7 @@ def create_local_linear_funcs(model_funcs, noise_cov, prior_mean, prior_cov, the
 #
 
 def create_log_post_and_grad(inv_noise, prior_mean, prior_cov, inv_prior):
+    
     # Computes mean, covariance matrix and inverse covariance matrix of posterior:
     def compute_mean_and_cov(y, b, G1):
         # Compute inverse cov and cov matrices:
