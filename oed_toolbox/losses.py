@@ -34,7 +34,7 @@ class APE:
 
             # Need to compute like_grad if we're applying control variates:
             if return_grad or apply_control_variates:
-                like_grad = likelihood.logpdf(theta, y, d, return_logpdf=False, return_dd=True)['logpdf_dd']
+                like_grad = likelihood.logpdf(y, theta, d, return_logpdf=False, return_dd=True)['logpdf_dd']
             if return_grad:
                 grad_samples = np.einsum('a,ai->ai', post_vals['logpdf'], like_grad) + post_vals['logpdf_dd']
 
@@ -47,7 +47,7 @@ class APE:
             if return_grad:
                 loss_del_d = -1*avging_func(grad_samples)
 
-            return loss if not return_grad else loss, loss_del_d
+            return loss if not return_grad else (loss, loss_del_d)
 
         return ape_and_grad
 

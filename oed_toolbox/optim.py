@@ -17,6 +17,7 @@ import scipy
 def gradient_descent_for_map(lr=1e-3, abs_tol=1e-5, rel_tol=1e-5, max_iter=50, lr_step=1e-1, max_attempts=5):
     
     def gradient_descent(map_loss_and_grad, theta_0, args):
+        
         y, d = args
         lr_i = lr
         num_attempts = 0
@@ -26,6 +27,10 @@ def gradient_descent_for_map(lr=1e-3, abs_tol=1e-5, rel_tol=1e-5, max_iter=50, l
             optimisation_successful = np.all(np.isfinite(theta)) & (num_attempts <= max_attempts)
             lr_i *= lr_step
             num_attempts += 1
+
+        if not optimisation_successful:
+            raise ValueError('Optimisation failed.')
+
         return theta
     
     def attempt_gradient_descent(map_loss_and_grad, theta_0, y, d, lr_i):

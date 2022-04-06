@@ -292,7 +292,7 @@ class Posterior(Distribution):
                 mean, cov, icov = mean_cov_and_icov(y, t_map, y_map, y_map_dt, b)
             if return_logpdf:
                 t_dim = cov.shape[0]
-                outputs['logpdf'] = -0.5*(t_dim*np.log(2*pi) + np.log(np.linalg.det(cov)) + np.einsum("ai,aij,aj->a", theta-mean, icov, theta-mean))
+                outputs['logpdf'] = utils.gaussian_logpdf(theta, mean, cov, icov) #-0.5*(t_dim*np.log(2*pi) + np.log(np.linalg.det(cov)) + np.einsum("ai,aij,aj->a", theta-mean, icov, theta-mean))
             if return_dd:
                 y_map_dd = model.y_dd(t_map, d)
                 y_map_dt_dt = model.y_dt_dt(t_map, d)
