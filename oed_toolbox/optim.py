@@ -1,23 +1,9 @@
 import numpy as np
 import scipy
 
-# def scipy_minimizer_for_map(method='L-BFGS'):
-#     def wrapped_minimizer(map_loss_and_grad, theta_0, y, d):
-
-#         wrapped_loss_and_grad
-
-#         num_opt = theta_0.shape[0]
-#         theta_map = []
-#         for i in range(num_opt):
-#             opt_result = scipy.optimize.minimize(wrapped_loss_and_grad, theta_0[i,:], args=(y[i,:], d[i,:]), method=method, jac=True)
-#             theta_map.append(opt_result['x'])
-#         return np.stack(theta_map, axis=0)
-#     return wrapped_minimizer
-
 def gradient_descent_for_map(lr=1e-3, abs_tol=1e-5, rel_tol=1e-5, max_iter=50, lr_step=1e-1, max_attempts=5):
     
     def gradient_descent(map_loss_and_grad, theta_0, args):
-        
         y, d = args
         lr_i = lr
         num_attempts = 0
@@ -27,10 +13,8 @@ def gradient_descent_for_map(lr=1e-3, abs_tol=1e-5, rel_tol=1e-5, max_iter=50, l
             optimisation_successful = np.all(np.isfinite(theta)) & (num_attempts <= max_attempts)
             lr_i *= lr_step
             num_attempts += 1
-
         if not optimisation_successful:
             raise ValueError('Optimisation failed.')
-
         return theta
     
     def attempt_gradient_descent(map_loss_and_grad, theta_0, y, d, lr_i):
@@ -69,8 +53,37 @@ def gradient_descent_for_map(lr=1e-3, abs_tol=1e-5, rel_tol=1e-5, max_iter=50, l
 
     return gradient_descent
 
-def oed_loss_for_scipy_minimiser(oed_loss):
-    def wrapped_loss_and_grad(*args, **kwargs):
-        loss, loss_grad = oed_loss(*args, **kwargs)
-        return np.asfortranarray(loss, dtype=np.float64).squeeze(), np.asfortranarray(loss_grad, dtype=np.float64)
-    return wrapped_loss_and_grad
+def adam_for_oed_loss(lr=1e-1, beta_1=0.9, beta_2=0.999, eps=1e-8):
+    def adam(oed_loss, d_0, rng, args, kwargs):
+        m_tm1 = 0
+        v_tm1 = 0
+        num_iter = 0
+        d = d_0
+        while num_iter < max_iter:
+            loss, grad = oed_loss(d, *args, rng=rng, **kwargs)
+            m_t = compute_exp_avg(new_val=grad, current_avg=m_tm1, wt=beta_1)
+            v_t = compute_exp_avg(new_val=grad**2, current_avg=v_tm1, wt=beta_2)
+            m_t_tilde = apply_bias_correction(m_t, wt=beta_1)
+            v_t_tilde = apply_bias_correction(v_t, wt=beta_2)
+            d -= lr*m_t_tilde/(v_t_tilde**0.5 + eps)
+            m_tm1, v_tm1 = m_t, v_t
+            num_iter += 1
+        return d
+    def exp_avg(new_val, current_avg, wt):
+        return wt*current_avg + (1-wt)*new_val 
+    def apply_bias_correction(new_avg, wt, num_iter):
+        return new_avg/(1-wt**(num_iter+1))
+    return adam
+
+# def scipy_minimizer_for_map(method='L-BFGS'):
+#     def wrapped_minimizer(map_loss_and_grad, theta_0, y, d):
+
+#         wrapped_loss_and_grad
+
+#         num_opt = theta_0.shape[0]
+#         theta_map = []
+#         for i in range(num_opt):
+#             opt_result = scipy.optimize.minimize(wrapped_loss_and_grad, theta_0[i,:], args=(y[i,:], d[i,:]), method=method, jac=True)
+#             theta_map.append(opt_result['x'])
+#         return np.stack(theta_map, axis=0)
+#     return wrapped_minimizer

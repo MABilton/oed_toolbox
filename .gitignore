@@ -1,5 +1,4 @@
-__pycache*
+*__pycache__*
 *.png
-gp_oed_surrogate
 *.json
-.*_kernel.py
+*.ipynb_*

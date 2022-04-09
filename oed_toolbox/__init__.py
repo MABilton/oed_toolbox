@@ -1,2 +1,2 @@
-__all__ = ['losses', 'models', 'optim', 'uncertainties']
+__all__ = ['losses', 'models', 'optim', 'distributions', 'covariances']
 from . import *

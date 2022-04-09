@@ -1,6 +1,7 @@
+import numpy as np
 import jax
 import jax.numpy as jnp
-import numpy as np
+from . import utils
 
 class Model:
 
@@ -8,16 +9,19 @@ class Model:
         self._model_funcs = model_funcs
 
     @classmethod
-    def by_finite_differences(model, theta_dim, d_dim, eps, vectorise=True):
-        if vectorise:
-            model = _vectorise(model)
-        model_dt = _finite_diff(model, theta_dim, 0, eps)
-        model_dd =  _finite_diff(model, d_dim, 1, eps)
-        model_dt_dt = _finite_diff(model_dt, theta_dim, 0, np.sqrt(eps))
-        model_dt_dd = _finite_diff(model_dt, d_dim, 1, np.sqrt(eps))
-        model_dt_dt_dd = _finite_diff(model_dt_dt, d_dim, 1, np.sqrt(np.sqrt(eps)))
-        return cls(model=model, model_dt=model_dt, model_dd=model_dd, model_dt_dt=model_dt_dt,
-                   model_dt_dd=model_dt_dd, model_dt_dt_dd=model_dt_dt_dd)
+    def from_surrojax_gp(cls, surrojax_gp, create_x=None):
+
+        append_x = lambda theta, d : jnp.concatenate([theta, d], axis=-1)
+        if create_x is None:
+            create_x = append_x 
+
+        def wrapped_surrojax_gp(theta, d):
+            x = create_x(theta, d)
+            if x.ndim < 2:
+                x = x[None,:]
+            return surrojax_gp.predict(x, return_var=False)['mean']
+
+        return cls.from_jax_function(wrapped_surrojax_gp)
 
     @classmethod
     def from_jax_function(cls, jax_func, forward_mode=True):
@@ -29,73 +33,51 @@ class Model:
                        'model_dt_dt': jax.jacfwd(jax.jacfwd(jax_func, argnums=0), argnums=0),
                        'model_dt_dd': jax.jacfwd(jax.jacfwd(jax_func, argnums=0), argnums=1),
                        'model_dt_dt_dd': jax.jacfwd(jax.jacfwd(jax.jacfwd(jax_func, argnums=0), argnums=0), argnums=1)}
-        
-        # Vectorise over sample dimensions and wrap functions:
+
+        # Vectorise over sample dimensions and wrap functions:        
+        def wrap_jax_func(func):
+            return lambda theta, d : func(jnp.array(theta, dtype=float), jnp.array(d, dtype=float))
         for key, func in model_funcs.items():
-            model_funcs[key] = cls._wrap_jax_func(jax.vmap(func, in_axes=(0,0)))
+            model_funcs[key] = wrap_jax_func(jax.vmap(func, in_axes=(0,0)))
 
         return cls(**model_funcs)
 
-    @staticmethod
-    def _wrap_jax_func(func):
-        return lambda theta, d : func(jnp.array(theta, dtype=float), jnp.array(d, dtype=float))
+    @classmethod
+    def by_finite_differences(cls, model, theta_dim, d_dim, eps, vectorise=True):
+        if vectorise:
+            model = _vectorise(model)
+        model_dt = _finite_diff(model, theta_dim, 0, eps)
+        model_dd =  _finite_diff(model, d_dim, 1, eps)
+        model_dt_dt = _finite_diff(model_dt, theta_dim, 0, np.sqrt(eps))
+        model_dt_dd = _finite_diff(model_dt, d_dim, 1, np.sqrt(eps))
+        model_dt_dt_dd = _finite_diff(model_dt_dt, d_dim, 1, np.sqrt(np.sqrt(eps)))
+        return cls(model=model, model_dt=model_dt, model_dd=model_dd, model_dt_dt=model_dt_dt,
+                   model_dt_dd=model_dt_dd, model_dt_dt_dd=model_dt_dt_dd)
 
-    def y(self, theta, d):
-        theta, d = self._preprocess_inputs(theta, d)
+    def predict(self, theta, d):
+        theta, d = utils._preprocess_inputs(theta=theta, d=d)
         num_samples = theta.shape[0]
         return self._model_funcs['model'](theta, d).reshape(num_samples, -1)
 
-    def y_dt(self, theta, d):
-        theta, d = self._preprocess_inputs(theta, d)
+    def predict_dt(self, theta, d):
+        theta, d = utils._preprocess_inputs(theta=theta, d=d)
         num_samples, theta_dim = theta.shape
         return self._model_funcs['model_dt'](theta, d).reshape(num_samples, -1, theta_dim)
 
-    def y_dd(self, theta, d):
-        theta, d = self._preprocess_inputs(theta, d)
+    def predict_dd(self, theta, d):
+        theta, d = utils._preprocess_inputs(theta=theta, d=d)
         num_samples, d_dim = d.shape
         return self._model_funcs['model_dd'](theta, d).reshape(num_samples, -1, d_dim)
 
-    def y_dt_dt(self, theta, d):
-        theta, d = self._preprocess_inputs(theta, d)
+    def predict_dt_dt(self, theta, d):
+        theta, d = utils._preprocess_inputs(theta=theta, d=d)
         num_samples, theta_dim = theta.shape
         return self._model_funcs['model_dt_dt'](theta, d).reshape(num_samples, -1, theta_dim, theta_dim)
 
-    def y_dt_dd(self, theta, d):
-        theta, d = self._preprocess_inputs(theta, d)
+    def predict_dt_dd(self, theta, d):
+        theta, d = utils._preprocess_inputs(theta=theta, d=d)
         (num_samples, theta_dim), d_dim = theta.shape, d.shape[-1]
         return self._model_funcs['model_dt_dd'](theta, d).reshape(num_samples, -1, theta_dim, d_dim)
-
-    def y_dt_dt_dd(self, theta, d):
-        theta, d = self._preprocess_inputs(theta, d)
-        (num_samples, theta_dim), d_dim = theta.shape, d.shape[-1]
-        return self._model_funcs['model_dt_dt_dd'](theta, d).reshape(num_samples, -1, theta_dim, theta_dim, d_dim)
-
-    def _preprocess_inputs(self, theta, d):
-        inputs, input_names = [np.atleast_1d(theta), np.atleast_1d(d)], ['theta', 'd']
-        inputs = self._ensure_2d_shape(inputs, input_names)
-        theta, d = self._check_sample_dimension(inputs, input_names)
-        return theta, d
-
-    @staticmethod
-    def _ensure_2d_shape(inputs, input_names):
-        for idx, (val, val_name) in enumerate(zip(inputs, input_names)):
-            if val.ndim == 1:
-                inputs[idx] = val[None, :]
-            elif val.ndim > 2:
-                raise ValueError(f'Expected {input_names} to be either one or two dimensional; ' 
-                                 f'instead, it had {val.ndim} dimensions.')
-        return inputs
-
-    @staticmethod
-    def _check_sample_dimension(inputs, input_names):
-        num_samples = np.max([val.shape[0] for val in inputs])
-        for idx, (val, val_name) in enumerate(zip(inputs, input_names)):
-            if val.shape[0] == 1:
-                inputs[idx] = np.broadcast_to(val, (num_samples, val.shape[-1]))
-            elif val.shape[0] != num_samples:
-                raise ValueError(f'Expected {val_name} input to have a sample dimension of size {num_samples}; ' 
-                                 f'instead it was of size {val.shape[0]}.')
-        return inputs
 
 #
 #   Helper Methods
