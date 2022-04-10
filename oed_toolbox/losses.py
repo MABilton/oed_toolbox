@@ -24,7 +24,7 @@ class APE:
         return self._loss_and_grad(d, num_samples, samples, rng, return_grad)
 
     @classmethod
-    def from_model_plus_constant_gaussian_noise(cls, model, minimizer, prior_mean, prior_cov, noise_cov, apply_control_variates=True, use_reparameterisation=False):
+    def using_laplace_approximation(cls, model, minimizer, prior_mean, prior_cov, noise_cov, apply_control_variates=True, use_reparameterisation=False):
         prior = distributions.Prior.gaussian(prior_mean, prior_cov)
         likelihood = distributions.Likelihood.from_model_plus_constant_gaussian_noise(model, noise_cov)
         approx_posterior = distributions.Posterior.laplace_approximation(model, minimizer, noise_cov, prior_mean, prior_cov)
@@ -47,9 +47,9 @@ class APE:
             loss_samples = post_vals['logpdf']
             if return_grad:
                 grad_samples = np.einsum('aij,ai->aj', transform['y_dd'], post_vals['logpdf_dy']) + post_vals['logpdf_dd']
-            loss = -1*np.mean(loss_samples)
+            loss = np.mean(loss_samples)
             if return_grad:
-                loss_del_d = -1*np.mean(grad_samples, axis=0)
+                loss_del_d = np.mean(grad_samples, axis=0)
             return loss if not return_grad else (loss, loss_del_d)
 
         return ape_and_grad
@@ -76,9 +76,9 @@ class APE:
                 outputs['loss_del_d'] = np.einsum('a,ai->ai', post_vals['logpdf'], like_grad) + post_vals['logpdf_dd']
             for key, val in outputs.items():
                 if apply_control_variates:
-                    outputs[key] = -1*utils.apply_control_variates(val, cv=like_grad)
+                    outputs[key] = utils.apply_control_variates(val, cv=like_grad)
                 else:
-                    outputs[key] = -1*np.mean(val, axis=0)
+                    outputs[key] = np.mean(val, axis=0)
             return outputs['loss'] if not return_grad else (outputs['loss'], outputs['loss_del_d'])
 
         return ape_and_grad
@@ -107,7 +107,7 @@ class D_Optimal(_Alphabet):
                 # Derivative of det(M) wrt M - see Eqn (49) in Matrix Cookbook (https://www2.imm.dtu.dk/pubdb/edoc/imm3274.pdf):
                 cov_dd = cov_vals['cov_dd']
                 loss_del_cov = loss*np.linalg.inv(cov).T
-                loss_del_d = jnp.einsum('ij,ijk->k', loss_del_cov, cov_dd)
+                loss_del_d = np.einsum('ij,ijk->k', loss_del_cov, cov_dd)
             return loss if not return_grad else loss, loss_del_d
         return loss_and_grad
 
@@ -119,12 +119,13 @@ class A_Optimal(_Alphabet):
             cov_vals = cov_func(d, theta_estimate, num_samples, rng, return_dd=return_grad)
             cov = cov_vals['cov']
             inv_cov = np.linalg.inv(cov)
-            loss = np.linalg.trace(cov)
+            loss = -1*np.trace(cov)
             if return_grad:
                 # Derivative of tr(M^-1) wrt M = -((M^-1)^T)@((M^-1)^T) - substitute A = B = I into Eqn (124) in Matrix Cookbook:
                 cov_dd = cov_vals['cov_dd']
                 loss_del_cov = -1*np.einsum('ji,kj->ik', inv_cov, inv_cov)
-                loss_del_d = np.einsum('ij,ijk->k', loss_del_cov, cov_dd)
+                # Want to MAXIMISE trace of inverse cov:
+                loss_del_d = -1*np.einsum('ij,ijk->k', loss_del_cov, cov_dd)
             return loss if not return_grad else loss, loss_del_d
         return loss_and_grad
 
@@ -136,11 +137,12 @@ class E_Optimal(_Alphabet):
             cov_vals = cov_func(d, theta_estimate, num_samples, rng, return_dd=return_grad)
             cov = cov_vals['cov']
             eigvals, eigvecs = np.linalg.eigh(cov)
-            loss, min_eigvec = eigvals[0], eigvecs[:,0]
+            loss, min_eigvec = -1*eigvals[0], eigvecs[:,0]
             if return_grad:
                 # Derivative of eigenvalue wrt matrix - see https://math.stackexchange.com/questions/2588473/derivatives-of-eigenvalues
                 cov_dd = cov_vals['cov_dd']
                 loss_del_cov = np.einsum('i,j->ij', min_eigvec, min_eigvec)
-                loss_del_d = np.einsum('ij,ijk->k', loss_del_cov, cov_dd)
+                # Need to MAXIMISE the smallest eigenvalue:
+                loss_del_d = -1*np.einsum('ij,ijk->k', loss_del_cov, cov_dd)
             return loss if not return_grad else loss, loss_del_d
         return loss_and_grad

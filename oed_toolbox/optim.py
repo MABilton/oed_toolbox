@@ -1,5 +1,6 @@
 import numpy as np
 import scipy
+from math import inf
 
 def gradient_descent_for_map(lr=1e-3, abs_tol=1e-5, rel_tol=1e-5, max_iter=50, lr_step=1e-1, max_attempts=5):
     
@@ -53,27 +54,39 @@ def gradient_descent_for_map(lr=1e-3, abs_tol=1e-5, rel_tol=1e-5, max_iter=50, l
 
     return gradient_descent
 
-def adam_for_oed_loss(lr=1e-1, beta_1=0.9, beta_2=0.999, eps=1e-8):
-    def adam(oed_loss, d_0, rng, args, kwargs):
-        m_tm1 = 0
-        v_tm1 = 0
+def adam_for_oed_loss(lr=1e-1, beta_1=0.9, beta_2=0.999, eps=1e-8, max_iter=100):
+    def adam(oed_loss, d_0, num_samples, rng, args=None, kwargs=None, verbose=False):
+        if args is None:
+            args = []
+        if kwargs is None:
+            kwargs = {}
         num_iter = 0
+        best_loss, best_d = inf, None
+        m_tm1, v_tm1 = 0, 0
         d = d_0
         while num_iter < max_iter:
-            loss, grad = oed_loss(d, *args, rng=rng, **kwargs)
+            loss, grad = oed_loss(d, *args, num_samples=num_samples, rng=rng, **kwargs)
             m_t = compute_exp_avg(new_val=grad, current_avg=m_tm1, wt=beta_1)
             v_t = compute_exp_avg(new_val=grad**2, current_avg=v_tm1, wt=beta_2)
-            m_t_tilde = apply_bias_correction(m_t, wt=beta_1)
-            v_t_tilde = apply_bias_correction(v_t, wt=beta_2)
+            m_t_tilde = apply_bias_correction(m_t, num_iter, wt=beta_1)
+            v_t_tilde = apply_bias_correction(v_t, num_iter, wt=beta_2)
             d -= lr*m_t_tilde/(v_t_tilde**0.5 + eps)
+            if loss < best_loss:
+                best_loss = loss
+                best_d = d
             m_tm1, v_tm1 = m_t, v_t
             num_iter += 1
-        return d
-    def exp_avg(new_val, current_avg, wt):
+            if verbose:
+                _print_optimiser_progress(num_iter, loss, d)
+        return best_d
+    def compute_exp_avg(new_val, current_avg, wt):
         return wt*current_avg + (1-wt)*new_val 
-    def apply_bias_correction(new_avg, wt, num_iter):
+    def apply_bias_correction(new_avg, num_iter, wt):
         return new_avg/(1-wt**(num_iter+1))
     return adam
+
+def _print_optimiser_progress(num_iter, loss, x):
+    print(f'Iteration {num_iter}: Loss = {loss}, x = {x}')
 
 # def scipy_minimizer_for_map(method='L-BFGS'):
 #     def wrapped_minimizer(map_loss_and_grad, theta_0, y, d):
