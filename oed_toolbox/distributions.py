@@ -231,19 +231,25 @@ class Posterior(Distribution):
     @staticmethod
     def _create_logpdf_and_grads(logpdf, logpdf_dd, logpdf_dy):
         def logpdf_and_grads(theta, y, d, return_logpdf, return_dd, return_dy):
-            output = {}
+            outputs = {}
+            print(theta.shape)
+            print(y.shape)
+            print(d.shape)
             if return_logpdf:
-                output = utils._attempt_func_call(logpdf, outputs, args=(theta, y, d), func_key='logpdf')
+                outputs = utils._attempt_func_call(logpdf, outputs, args=(theta, y, d), func_key='logpdf')
             if return_dd:
-                output = utils._attempt_func_call(logpdf_dd, outputs, args=(theta, y, d), func_key='logpdf_dd')
+                outputs = utils._attempt_func_call(logpdf_dd, outputs, args=(theta, y, d), func_key='logpdf_dd')
             if return_dy:
-                output = utils._attempt_func_call(logpdf_dy, outputs, args=(theta, y, d), func_key='logpdf_dy')
-            return output
+                outputs = utils._attempt_func_call(logpdf_dy, outputs, args=(theta, y, d), func_key='logpdf_dy')
+            return outputs
         return logpdf_and_grads
 
-    # @classmethod
-    # def from_posteriax(cls, posteriax):
-    #     pass
+    @classmethod
+    def from_approx_post(cls, approx_post):
+        logpdf = lambda theta, y, d : approx_post.logpdf(theta[:,None,:], x=y, d=d)
+        logpdf_dd = lambda theta, y, d : approx_post.logpdf_del_d(theta[:,None,:], x=y, d=d)
+        logpdf_dy = lambda theta, y, d : approx_post.logpdf_del_y(theta[:,None,:], x=y, d=d)
+        return cls(logpdf=logpdf, logpdf_dd=logpdf_dd, logpdf_dy=logpdf_dy)
 
     @classmethod
     def laplace_approximation(cls, model, minimizer, noise_cov, prior_mean, prior_cov):
