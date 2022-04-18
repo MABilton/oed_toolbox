@@ -232,9 +232,6 @@ class Posterior(Distribution):
     def _create_logpdf_and_grads(logpdf, logpdf_dd, logpdf_dy):
         def logpdf_and_grads(theta, y, d, return_logpdf, return_dd, return_dy):
             outputs = {}
-            print(theta.shape)
-            print(y.shape)
-            print(d.shape)
             if return_logpdf:
                 outputs = utils._attempt_func_call(logpdf, outputs, args=(theta, y, d), func_key='logpdf')
             if return_dd:
