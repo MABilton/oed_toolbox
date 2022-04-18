@@ -47,9 +47,9 @@ class APE:
             loss_samples = post_vals['logpdf']
             if return_grad:
                 grad_samples = np.einsum('aij,ai->aj', transform['y_dd'], post_vals['logpdf_dy']) + post_vals['logpdf_dd']
-            loss = np.mean(loss_samples)
+            loss = -1*np.mean(loss_samples)
             if return_grad:
-                loss_del_d = np.mean(grad_samples, axis=0)
+                loss_del_d = -1*np.mean(grad_samples, axis=0)
             return loss if not return_grad else (loss, loss_del_d)
 
         return ape_and_grad
@@ -76,9 +76,9 @@ class APE:
                 outputs['loss_del_d'] = np.einsum('a,ai->ai', post_vals['logpdf'], like_grad) + post_vals['logpdf_dd']
             for key, val in outputs.items():
                 if apply_control_variates:
-                    outputs[key] = utils.apply_control_variates(val, cv=like_grad)
+                    outputs[key] = -1*utils.apply_control_variates(val, cv=like_grad)
                 else:
-                    outputs[key] = np.mean(val, axis=0)
+                    outputs[key] = -1*np.mean(val, axis=0)
             return outputs['loss'] if not return_grad else (outputs['loss'], outputs['loss_del_d'])
 
         return ape_and_grad
