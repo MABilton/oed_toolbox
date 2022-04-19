@@ -1,4 +1,5 @@
 from math import pi
+import jax
 import numpy as np
 from . import utils
 
@@ -231,19 +232,38 @@ class Posterior(Distribution):
     @staticmethod
     def _create_logpdf_and_grads(logpdf, logpdf_dd, logpdf_dy):
         def logpdf_and_grads(theta, y, d, return_logpdf, return_dd, return_dy):
-            output = {}
+            outputs = {}
             if return_logpdf:
-                output = utils._attempt_func_call(logpdf, outputs, args=(theta, y, d), func_key='logpdf')
+                outputs = utils._attempt_func_call(logpdf, outputs, args=(theta, y, d), func_key='logpdf')
             if return_dd:
-                output = utils._attempt_func_call(logpdf_dd, outputs, args=(theta, y, d), func_key='logpdf_dd')
+                outputs = utils._attempt_func_call(logpdf_dd, outputs, args=(theta, y, d), func_key='logpdf_dd')
             if return_dy:
-                output = utils._attempt_func_call(logpdf_dy, outputs, args=(theta, y, d), func_key='logpdf_dy')
-            return output
+                outputs = utils._attempt_func_call(logpdf_dy, outputs, args=(theta, y, d), func_key='logpdf_dy')
+            return outputs
         return logpdf_and_grads
 
-    # @classmethod
-    # def from_posteriax(cls, posteriax):
-    #     pass
+    @classmethod
+    def from_approx_post(cls, approx_post):
+        logpdf = lambda theta, y, d : approx_post.logpdf(theta[:,None,:], x=y, d=d)
+        # Remove sample dimension in output:
+        logpdf_dd = lambda theta, y, d : approx_post.logpdf_del_d(theta[:,None,:], x=y, d=d)[:,0,:]
+        # Remove sample dimension in output:
+        logpdf_dy = lambda theta, y, d : approx_post.logpdf_del_x(theta[:,None,:], x=y, d=d)[:,0,:]
+        return cls(logpdf=logpdf, logpdf_dd=logpdf_dd, logpdf_dy=logpdf_dy)
+
+    @classmethod
+    def from_jax_function(cls, jax_func, use_vmap=True, use_fwd=True):
+        if use_fwd:
+            grad = jax.jacfwd
+        else:
+            grad = jax.jacrev
+        func_dict = {'logpdf': jax_func,
+                     'logpdf_dy': grad(jax_func, argnums=1),
+                     'logpdf_dd': grad(jax_func, argnums=2)}
+        if use_vmap:
+            for key, func in func_dict.items():
+                func_dict[key] = jax.vmap(func, in_axes=(0,0,0))
+        return cls(**func_dict)
 
     @classmethod
     def laplace_approximation(cls, model, minimizer, noise_cov, prior_mean, prior_cov):
@@ -363,3 +383,24 @@ class Posterior(Distribution):
             return mean_dy, cov_dy, icov_dy
 
         return cls(logpdf_and_grads=logpdf_and_grads)
+
+class Joint(Distribution):
+
+    def __init__(self, sample=None):
+        self._func_dict = {'sample': sample}
+
+    @classmethod
+    def from_prior_and_likelihood(cls, prior, likelihood):
+        def sample(d, num_samples, rng):
+            theta = prior.sample(num_samples, rng)
+            y = likelihood.sample(theta, d, num_samples, rng)
+            return theta, y
+        return cls(sample=sample)
+
+    def sample(self, d, num_samples, rng=None):
+        if 'sample' not in self._func_dict:
+            return AttributeError('Sampling function not specified.')
+        d = utils._preprocess_inputs(d=d)
+        theta, y = self._func_dict['sample'](d, num_samples, rng)
+        return {'theta': theta.reshape(num_samples, theta.shape[-1]), 
+                'y': y.reshape(num_samples, y.shape[-1])}

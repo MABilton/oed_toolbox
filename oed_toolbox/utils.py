@@ -1,5 +1,6 @@
 from math import pi
 import numpy as np
+import jax.numpy as jnp
 from scipy.stats import multivariate_normal as mvn
 
 #
@@ -14,25 +15,35 @@ def _attempt_func_call(func, outputs_dict, args, func_key):
     return outputs_dict 
 
 def _preprocess_inputs(**inputs):
-    inputs = _ensure_arrays_are_2d(inputs)
-    inputs = _check_batch_dimension(inputs)
-    outputs = tuple(inputs.values())
+    if 'use_jax' in inputs:
+        use_jax = inputs['use_jax']
+    else:
+        use_jax = False
+    inputs = _ensure_arrays_are_2d(inputs, use_jax)
+    inputs = _check_batch_dimension(inputs, use_jax)
+    outputs = tuple([val for key, val in inputs.items() if key != 'use_jax'])
     return outputs if len(outputs) > 1 else outputs[0]
 
-def _ensure_arrays_are_2d(inputs):
-    for key, val in inputs.items():
-        val = np.atleast_1d(val)
+def _ensure_arrays_are_2d(inputs, use_jax):
+    for key, val in inputs.items(): 
+        val = jnp.atleast_1d(val) if use_jax else np.atleast_1d(val)
         if val.ndim == 1:
             inputs[key] = val[None,:]
         elif val.ndim > 2:
             raise ValueError(f'{key} must be a one or two-dimensional array.')
     return inputs
 
-def _check_batch_dimension(inputs):
-    num_batch = np.max([val.shape[0] for val in inputs.values()])
+def _check_batch_dimension(inputs, use_jax):
+    if use_jax:
+        num_batch = jnp.max(jnp.array([val.shape[0] for val in inputs.values()]))
+    else:
+        num_batch = np.max([val.shape[0] for val in inputs.values()])
     for key, val in inputs.items():
         if val.shape[0] == 1:
-            inputs[key] = np.broadcast_to(val, shape=(num_batch, val.shape[-1]))
+            if use_jax:
+                inputs[key] = jnp.broadcast_to(val, shape=(num_batch, val.shape[-1]))
+            else:
+                inputs[key] = np.broadcast_to(val, shape=(num_batch, val.shape[-1]))
         elif val.shape[0] != num_batch:
             raise ValueError(f'Expected {key} input to have a batch dimension of {num_batch}; ' 
                                 f'instead, it was {val.shape[0]}.')
