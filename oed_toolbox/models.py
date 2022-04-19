@@ -5,7 +5,8 @@ from . import utils
 
 class Model:
 
-    def __init__(self, **model_funcs):
+    def __init__(self, use_jax=False, **model_funcs):
+        self._use_jax = use_jax
         self._model_funcs = model_funcs
 
     @classmethod
@@ -40,7 +41,7 @@ class Model:
         for key, func in model_funcs.items():
             model_funcs[key] = wrap_jax_func(jax.vmap(func, in_axes=(0,0)))
 
-        return cls(**model_funcs)
+        return cls(use_jax=True, **model_funcs)
 
     @classmethod
     def by_finite_differences(cls, model, theta_dim, d_dim, eps, vectorise=True):
@@ -55,27 +56,27 @@ class Model:
                    model_dt_dd=model_dt_dd, model_dt_dt_dd=model_dt_dt_dd)
 
     def predict(self, theta, d):
-        theta, d = utils._preprocess_inputs(theta=theta, d=d)
+        theta, d = utils._preprocess_inputs(theta=theta, d=d, use_jax=self._use_jax)
         num_samples = theta.shape[0]
         return self._model_funcs['model'](theta, d).reshape(num_samples, -1)
 
     def predict_dt(self, theta, d):
-        theta, d = utils._preprocess_inputs(theta=theta, d=d)
+        theta, d = utils._preprocess_inputs(theta=theta, d=d, use_jax=self._use_jax)
         num_samples, theta_dim = theta.shape
         return self._model_funcs['model_dt'](theta, d).reshape(num_samples, -1, theta_dim)
 
     def predict_dd(self, theta, d):
-        theta, d = utils._preprocess_inputs(theta=theta, d=d)
+        theta, d = utils._preprocess_inputs(theta=theta, d=d, use_jax=self._use_jax)
         num_samples, d_dim = d.shape
         return self._model_funcs['model_dd'](theta, d).reshape(num_samples, -1, d_dim)
 
     def predict_dt_dt(self, theta, d):
-        theta, d = utils._preprocess_inputs(theta=theta, d=d)
+        theta, d = utils._preprocess_inputs(theta=theta, d=d, use_jax=self._use_jax)
         num_samples, theta_dim = theta.shape
         return self._model_funcs['model_dt_dt'](theta, d).reshape(num_samples, -1, theta_dim, theta_dim)
 
     def predict_dt_dd(self, theta, d):
-        theta, d = utils._preprocess_inputs(theta=theta, d=d)
+        theta, d = utils._preprocess_inputs(theta=theta, d=d, use_jax=self._use_jax)
         (num_samples, theta_dim), d_dim = theta.shape, d.shape[-1]
         return self._model_funcs['model_dt_dd'](theta, d).reshape(num_samples, -1, theta_dim, d_dim)
 
