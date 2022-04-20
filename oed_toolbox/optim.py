@@ -55,17 +55,22 @@ def gradient_descent_for_map(lr=1e-3, abs_tol=1e-5, rel_tol=1e-5, max_iter=50, l
     return gradient_descent
 
 def adam_for_oed_loss(lr=1e-1, beta_1=0.9, beta_2=0.999, eps=1e-8, max_iter=100):
-    def adam(oed_loss, d_0, num_samples, rng, args=None, kwargs=None, verbose=False):
+    def adam(oed_loss, d_0, num_samples, rng, args=None, kwargs=None, verbose=False, return_history=False):
         if args is None:
             args = []
         if kwargs is None:
             kwargs = {}
+        if return_history:
+            history = {'loss': [], 'd': []}
         num_iter = 0
         best_loss, best_d = inf, None
         m_tm1, v_tm1 = 0, 0
         d = d_0
         while num_iter < max_iter:
             loss, grad = oed_loss(d, *args, num_samples=num_samples, rng=rng, **kwargs)
+            if return_history:
+                history['loss'].append(float(loss))
+                history['d'].append(float(d))
             m_t = compute_exp_avg(new_val=grad, current_avg=m_tm1, wt=beta_1)
             v_t = compute_exp_avg(new_val=grad**2, current_avg=v_tm1, wt=beta_2)
             m_t_tilde = apply_bias_correction(m_t, num_iter, wt=beta_1)
@@ -78,7 +83,7 @@ def adam_for_oed_loss(lr=1e-1, beta_1=0.9, beta_2=0.999, eps=1e-8, max_iter=100)
             num_iter += 1
             if verbose:
                 _print_optimiser_progress(num_iter, loss, d)
-        return best_d
+        return (best_d, history) if return_history else best_d
     def compute_exp_avg(new_val, current_avg, wt):
         return wt*current_avg + (1-wt)*new_val 
     def apply_bias_correction(new_avg, num_iter, wt):
