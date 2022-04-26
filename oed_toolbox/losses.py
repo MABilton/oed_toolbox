@@ -13,7 +13,7 @@ class APE:
         else:
             self._loss_and_grad = self._create_loss(prior, likelihood, posterior)
 
-    def __call__(self, d, num_samples=None, samples=None, rng=None, apply_control_variates=True, return_grad=True):
+    def __call__(self, d, num_samples=None, samples=None, rng=None, apply_control_variates=False, return_grad=True):
         if (num_samples is None) and (samples is None):
             raise ValueError('Must specify either num_samples or samples as an input.')
         if num_samples is None:
@@ -50,6 +50,8 @@ class APE:
                 np.einsum('aij,ai->aj', transform['y_dd'], post_vals['logpdf_dy']) + post_vals['logpdf_dd']
             if apply_control_variates:
                 like_grad = likelihood.logpdf(transform['y'], theta, d, return_logpdf=False, return_dd=True)['logpdf_dd']
+            else:
+                like_grad = None
             outputs = self._average_samples(outputs, like_grad, apply_control_variates)
             return outputs['loss'] if not return_grad else (outputs['loss'], outputs['loss_del_d'])
 
