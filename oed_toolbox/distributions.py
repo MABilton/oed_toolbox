@@ -324,13 +324,16 @@ class Posterior(Distribution):
             loss_del_theta = -2*np.einsum("aik,ij,aj->ak", y_del_theta, noise_icov, y-y_pred) + \
                               2*np.einsum("ij,aj->ai", prior_icov, theta-prior_mean)
             return loss, loss_del_theta
-            
+        
+        def map_loss_dt_dt(y, g_map, g_dt_map, g_dt_dt_map):
+            return 2*(prior_icov + np.einsum("ali,lk,akj->aij", g_dt_map, noise_icov, g_dt_map) \
+                     - np.einsum("alij,lk,ak->aij", g_dt_dt_map, noise_icov, y-g_map))   
+
         def theta_map_dd(y, g_map, g_dt_map, g_dd_map, g_dt_dt_map, g_dt_dd_map):
-            map_loss_dt_dt = 2*(prior_icov + np.einsum("ali,lk,akj->aij", g_dt_map, noise_icov, g_dt_map) \
-                                - np.einsum("alij,lk,ak->aij", g_dt_dt_map, noise_icov, y-g_map))
-            map_loss_dt_dd = 2*(np.einsum("ali,lk,akj->aij", g_dt_map, noise_icov, g_dd_map) - \
-                                np.einsum("alij,lk,ak->aij", g_dt_dd_map, noise_icov, y-g_map))
-            return -1*np.linalg.solve(map_loss_dt_dt, map_loss_dt_dd)
+            loss_dt_dt = map_loss_dt_dt(y, g_map, g_dt_map, g_dt_dt_map)
+            loss_dt_dd = 2*(np.einsum("ali,lk,akj->aij", g_dt_map, noise_icov, g_dd_map) - \
+                            np.einsum("alij,lk,ak->aij", g_dt_dd_map, noise_icov, y-g_map))
+            return -1*np.linalg.solve(loss_dt_dt, loss_dt_dd)
 
         def linearisation_constant(g_map, g_dt_map, theta_map):
             return g_map - np.einsum("aij,aj->ai", g_dt_map, theta_map)
@@ -360,10 +363,9 @@ class Posterior(Distribution):
             return mean_dd, cov_dd, icov_dd
 
         def theta_map_dy(y, g_map, g_dt_map, g_dt_dt_map):
-            map_loss_dt_dt = 2*(prior_icov - np.einsum("alij,lk,ak->aij", g_dt_dt_map, noise_icov, y-g_map) - \
-                                np.einsum("ali,lk,akj->aij", g_dt_map, noise_icov, g_dt_map))
-            map_loss_dt_dy = -2*np.einsum('ik,akj->aij', noise_icov, g_dt_map)
-            return -1*np.linalg.solve(map_loss_dt_dt, map_loss_dt_dy)
+            loss_dt_dt = map_loss_dt_dt(y, g_map, g_dt_map, g_dt_dt_map)    
+            loss_dt_dy = -2*np.einsum('ik,akj->aij', noise_icov, g_dt_map)
+            return -1*np.linalg.solve(loss_dt_dt, loss_dt_dy)
         
         def mean_cov_and_icov_dy(y, G, g_dt_dt_map, t_map, t_map_dy, cov, b):
             # G = partial_0 g(theta=theta_map(y,d), d) = g_dt_map
